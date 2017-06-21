@@ -1,44 +1,40 @@
 import java.io.File
 
-fun floors(s: String) = s.fold(0) { floor, c ->
-    if (c == '(') floor + 1
-    else if (c == ')') floor - 1
-    else floor
-}
+object Day1: Puzzle() {
 
-fun firstTimeInBasement(s: String): Int? {
-    s.foldIndexed(0) { index, floor, c ->
-        (if (c == '(') floor + 1
+    fun floors(s: String) = s.fold(0) { floor, c ->
+        if (c == '(') floor + 1
         else if (c == ')') floor - 1
-        else floor)
-                .apply {
-                    if (this < 0) return index
-                }
+        else floor
     }
-    return null
-}
 
-fun assert(x: Any, y: Any): Unit {
-    if (x != y) throw Error("$x expected to be $y")
-}
+    fun firstTimeInBasement(s: String): Int? {
+        s.foldIndexed(0) { index, floor, c ->
+            (if (c == '(') floor + 1
+            else if (c == ')') floor - 1
+            else floor)
+                    .apply {
+                        if (this < 0) return index
+                    }
+        }
+        return null
+    }
 
-fun main(vararg arg: String) {
-    assert(floors("( (  )     )"), 0)
-    assert(floors("()()"), 0)
-    assert(floors("((("), 3)
-    assert(floors("(()(()("), 3)
-    assert(floors("))((((("), 3)
-    assert(floors("())"), -1)
-    assert(floors(")())())"), -3)
+    fun testFloors1() = floors("( (  )     )") shouldBe 0
+    fun testFloors2() = floors("(((") shouldBe 3
+    fun testFloors3() = floors("(()(()(") shouldBe 3
+    fun testFloors4() = floors("))(((((") shouldBe 3
+    fun testFloors5() = floors("())") shouldBe -1
+    fun testFloors6() = floors(")())())") shouldBe -3
 
     val input = File("src/day1.txt").readText()
-    println(floors(input))
-    println(firstTimeInBasement(input)?.let { arg -> arg + 1 })
 
-    ("asdasd" as Int) xor 1
+    override fun part1() = floors(input)
+    override fun part2() = firstTimeInBasement(input)?.let { arg -> arg + 1 }
+
+    @JvmStatic
+    fun main(vararg arg: String) = solve()
 }
-
-
 
 
 
