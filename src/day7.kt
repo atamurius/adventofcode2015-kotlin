@@ -4,86 +4,84 @@ typealias Circuit = List<Pair<String, Day7.Instr>>
 
 object Day7 : Puzzle() {
 
+    /**
+     * Full circuit.
+     * @param instruction map wire name to instruction it gets signal from
+     */
     data class Circuit(val instruction: Map<String, Instr>) {
-        val cachedValues = mutableMapOf<String, Int>()
+        private val cachedValues = mutableMapOf<String, Int>()
+        /**
+         * Evaluates wire signal and caches it
+         */
         operator fun get(wire: String) = cachedValues[wire] ?:
                 (instruction[wire]?.evaluate(this) ?: error("$wire is undefined")).apply {
                     cachedValues.put(wire, this)
                 }
+
+        /**
+         * Overrides wire signal, so it's not evaluated any more
+         */
         fun override(wire: String, value: Int) {
             cachedValues.put(wire, value)
         }
     }
 
-    interface Evalable {
+    /**
+     * Signal source: just signal or wire
+     */
+    interface Instr {
         fun evaluate(instr: Circuit): Int
     }
 
-    interface Source : Evalable
-    data class Signal(val value: Int): Source {
+    data class Signal(val value: Int) : Instr {
         override fun evaluate(instr: Circuit) = value
-        override fun toString() = "$value"
     }
-    data class Wire(val name: String): Source {
+    data class Wire(val name: String) : Instr {
         override fun evaluate(instr: Circuit) = instr[name]
-        override fun toString() = name
     }
 
-    interface Instr : Evalable
-    data class Connection(val value: Source) : Instr {
-        override fun evaluate(instr: Circuit) = value.evaluate(instr).apply {
-            println("$value -> $this")
-        }
+    data class BiGate(val left: Instr,
+                      val right: Instr,
+                      val op: (Int, Int) -> Int) : Instr {
 
-        override fun toString() = "$value"
-    }
-    data class BiGate(val left: Source, val right: Source, val op: BinaryOp) : Instr {
-        override fun evaluate(instr: Circuit): Int = op(left.evaluate(instr), right.evaluate(instr)).apply {
-            println("$left $op $right -> $this")
-        }
-
-        override fun toString() = "$left $op $right"
+        override fun evaluate(instr: Circuit): Int = op(left.evaluate(instr), right.evaluate(instr))
     }
 
-    data class UnGate(val arg: Source, val op: UnaryOp) : Instr {
-        override fun evaluate(instr: Circuit) = op(arg.evaluate(instr)).apply {
-            println("$op $arg -> $this")
-        }
+    data class UnGate(val arg: Instr,
+                      val op: (Int) -> Int) : Instr {
 
-        override fun toString() = "$op $arg"
+        override fun evaluate(instr: Circuit) = op(arg.evaluate(instr))
     }
 
-    class UnaryOp(val name: String, val op: (Int) -> Int) {
-        override fun toString() = name
-        operator fun invoke(value: Int) = op(value)
-    }
+    // --- End of types definition -------------------------------------------------------------------------------------
 
-    class BinaryOp(val name: String, val op: (Int, Int) -> Int) {
-        override fun toString() = name
-        operator fun invoke(a: Int, b: Int) = op(a, b)
-    }
+    val binaryOps = mapOf<String, (Int, Int) -> Int>(
+            "AND"       to Int::and,
+            "OR"        to Int::or,
+            "LSHIFT"    to Int::shl,
+            "RSHIFT"    to Int::shr)
 
-    val binaryOps = mapOf(
-            "AND" to BinaryOp("AND", { a, b -> a and b }),
-            "OR" to BinaryOp("OR", { a, b -> a or b }),
-            "LSHIFT" to BinaryOp("LSHIFT", { a, b -> a shl b }),
-            "RSHIFT" to BinaryOp("RSHIFT", { a, b -> a shr b }))
+    val unaryOps = mapOf<String, (Int) -> Int>("NOT" to { x -> x.inv() and 0xffff })
 
-    val unaryOps = mapOf("NOT" to UnaryOp("NOT", { x -> x.inv() and 0xffff }))
-
-    infix fun Source.connectedTo(wire: String): Pair<String, Instr> = wire to Connection(this)
+    // DSL
     infix fun Instr.connectedTo(wire: String): Pair<String, Instr> = wire to this
-    infix fun Source.and(right: Source) = BiGate(this, right, binaryOps["AND"]!!)
-    infix fun Source.or(right: Source) = BiGate(this, right, binaryOps["OR"]!!)
-    infix fun Source.lsh(right: Source) = BiGate(this, right, binaryOps["LSHIFT"]!!)
-    infix fun Source.rsh(right: Source) = BiGate(this, right, binaryOps["RSHIFT"]!!)
-    operator fun Source.not() = UnGate(this, unaryOps["NOT"]!!)
+    infix fun Instr.and(right: Instr) = BiGate(this, right, Int::and)
+    infix fun Instr.or(right: Instr) = BiGate(this, right, Int::or)
+    infix fun Instr.lsh(right: Instr) = BiGate(this, right, Int::shl)
+    infix fun Instr.rsh(right: Instr) = BiGate(this, right, Int::shr)
+    operator fun Instr.not() = UnGate(this, unaryOps["NOT"]!!)
+
+    /**
+     * [Instr] type and DSL functions allow to create complex instructions:
+     */
+    val complexInstructions = ! (Wire("x") and Signal(5)) lsh Wire("y") connectedTo "z"
+
 
     fun parseSource(str: String) = if (Character.isDigit(str[0])) Signal(str.toInt()) else Wire(str)
 
     fun parse(str: String,
-              unOps: Map<String, UnaryOp> = unaryOps,
-              biOps: Map<String, BinaryOp> = binaryOps): Pair<String, Instr> =
+              unOps: Map<String, (Int) -> Int> = unaryOps,
+              biOps: Map<String, (Int, Int) -> Int> = binaryOps): Pair<String, Instr> =
 
             Regex("""(\S+) -> (\w+)""").matchEntire(str)?.destructured?.let { (source, target) ->
                 parseSource(source) connectedTo target
@@ -95,9 +93,8 @@ object Day7 : Puzzle() {
                 UnGate(parseSource(arg), unOps[op] ?: error("Undefined unary operation $op")) connectedTo target
             } ?: error("Unknown instruction $str")
 
-    fun toString(instr: Pair<String, Instr>) = "${instr.second} -> ${instr.first}"
-
-    val exampleText = """|123 -> x
+    val example =
+        """|123 -> x
            |456 -> y
            |x AND y -> d
            |x OR y -> e
@@ -106,11 +103,8 @@ object Day7 : Puzzle() {
            |NOT x -> h
            |NOT y -> i"""
             .trimMargin()
-
-    val example = exampleText
                 .lines()
-                .map { parse(it) }
-                .toMap()
+                .associate { parse(it) }
 
     fun testParse() = example shouldBe mapOf(
             Signal(123) connectedTo "x",
@@ -132,13 +126,7 @@ object Day7 : Puzzle() {
             "x" to 123,
             "y" to 456)
 
-    fun testToString() = example.toList().joinToString("\n") { toString(it) } shouldBe exampleText
-
     val input = File("src/day7.txt").readLines().map { parse(it) }.toMap()
-
-    fun testInputToString() = File("src/day7.txt").readLines().forEach {
-        parse(it).let { toString(it) } shouldBe it
-    }
 
     override fun part1() = Circuit(input)["a"]
     override fun part2() = Circuit(input).apply { override("b", 3176) }["a"]
